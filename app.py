@@ -1,109 +1,406 @@
-# =================================================
-# 1. IMPORTS
-# =================================================
 import streamlit as st
 import pandas as pd
-from datetime import date, timedelta
-import matplotlib.pyplot as plt
-import random
-
+import plotly.express as px
+from datetime import datetime
+from fpdf import FPDF
+import base64
 
 # =================================================
-# 2. PAGE CONFIGURATION
+# 1. PAGE CONFIGURATION & THEME
 # =================================================
 st.set_page_config(
-    page_title="Smart Attendance Dashboard",
-    page_icon="📊",
-    layout="centered"
+    page_title="ACE IoT Smart Attendance",
+    page_icon="🎓",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-
-# =================================================
-# 3. DATA LOADING (CACHED)
-# =================================================
-@st.cache_data
-def load_data():
-    students = pd.read_csv("students.csv")
-    attendance = pd.read_csv("attendance.csv")
-    return students, attendance
-
-students, attendance = load_data()
-
-
-# =================================================
-# 4. GLOBAL UI CONTROLS
-# =================================================
-dark_mode = st.sidebar.toggle("🌙 Dark Mode")
-
-
-# =================================================
-# 5. GLOBAL STYLES
-# =================================================
-st.markdown(f"""
+# Custom CSS for Figma-like Glassmorphism & Cards
+st.markdown("""
 <style>
-body {{
-    background-color: {"#121212" if dark_mode else "#f4f6f8"};
-    color: {"#e0e0e0" if dark_mode else "#000000"};
-}}
-.header {{
-    background: linear-gradient(90deg, #1565c0, #42a5f5);
-    padding: 22px;
-    border-radius: 16px;
-    color: white;
-    text-align: center;
-    margin-bottom: 24px;
-}}
-.section {{
-    background: {"#1e1e1e" if dark_mode else "#ffffff"};
-    padding: 22px;
-    border-radius: 16px;
-    margin-bottom: 22px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.08);
-}}
-.metric-box {{
-    background: {"#263238" if dark_mode else "#eef6ff"};
-    padding: 18px;
-    border-radius: 14px;
-    text-align: center;
-}}
-.chip {{
-    padding: 6px 14px;
-    border-radius: 20px;
-    color: white;
-    font-size: 13px;
-    font-weight: bold;
-}}
-.safe {{ background: #2e7d32; }}
-.warn {{ background: #f9a825; }}
-.critical {{ background: #c62828; }}
-.stButton > button {{
-    background-color: #1565c0;
-    color: white;
-    border-radius: 10px;
-    height: 44px;
-    font-size: 16px;
-}}
+    /* Global Styles */
+    .stApp {
+        background-color: #f8f9fa;
+    }
+    
+    /* Card Styling */
+    .css-card {
+        border-radius: 15px;
+        padding: 20px;
+        background-color: white;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+        border: 1px solid #e0e0e0;
+    }
+    
+    /* Metrics Styling */
+    div[data-testid="stMetricValue"] {
+        font-size: 28px;
+        color: #2E86C1;
+    }
+    
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #1a1a2e;
+        color: white;
+    }
+    
+    /* Headers */
+    h1, h2, h3 {
+        font-family: 'Segoe UI', sans-serif;
+        color: #1a1a2e;
+    }
 </style>
 """, unsafe_allow_html=True)
 
+# =================================================
+# 2. DATA HANDLER (BACKEND LOGIC)
+# =================================================
+SUBJECTS = ["BEE", "ODEVC", "DS", "AEP", "IT WORKSHOP", "BEE LAB", "DS LAB", "PPL LAB"]
+
+# Initialize Session State (This acts as your temporary database)
+if 'attendance_data' not in st.session_state:
+    # Try to load existing csv, else create empty
+    try:
+        st.session_state.attendance_data = pd.read_csv('attendance_log.csv')
+    except:
+        columns = ['Date', 'Roll', 'Name', 'Subject', 'Status', 'Timestamp']
+        st.session_state.attendance_data = pd.DataFrame(columns=columns)
+
+@st.cache_data
+def load_students():
+    try:
+        return pd.read_csv("students.csv")
+    except FileNotFoundError:
+        st.error("Please create students.csv file first!")
+        return pd.DataFrame()
+
+df_students = load_students()
 
 # =================================================
-# 6. HELPERS
+# 3. HELPER FUNCTIONS
 # =================================================
-def get_attendance_status(percent):
-    if percent >= 75:
-        return "SAFE", "safe", "Attendance is healthy"
-    elif percent >= 60:
-        return "WARNING", "warn", "Attendance needs attention"
+def get_avatar_url(name):
+    """Generates a professional avatar based on initials"""
+    clean_name = name.replace(" ", "+")
+    return f"https://ui-avatars.com/api/?name={clean_name}&background=random&color=fff&size=128&bold=true"
+
+def download_pdf(dataframe):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt="Attendance Report", ln=True, align='C')
+    pdf.ln(10)
+    
+    # Simple table dump
+    for i, row in dataframe.iterrows():
+        pdf.cell(0, 10, txt=f"{row['Date']} - {row['Name']} ({row['Roll']}) - {row['Subject']} - {row['Status']}", ln=True)
+        
+    return pdf.output(dest="S").encode("latin-1")
+
+# =================================================
+# 4. APP NAVIGATION & LAYOUT
+# =================================================
+st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2995/2995458.png", width=100)
+st.sidebar.title("ACE IoT Portal")
+menu = st.sidebar.radio("Navigation", ["🏠 Dashboard (Student)", "👮 Faculty Admin", "📊 Analytics Hub"])
+
+# =================================================
+# 5. STUDENT DASHBOARD
+# =================================================
+if menu == "🏠 Dashboard (Student)":
+    st.title("🎓 Student Portal")
+    
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        st.markdown("### 🆔 Login")
+        roll_input = st.text_input("Enter Roll Number", placeholder="e.g., 25AG1A6901").upper()
+        
+    if roll_input:
+        student_info = df_students[df_students['roll'] == roll_input]
+        
+        if not student_info.empty:
+            name = student_info.iloc[0]['name']
+            
+            # Profile Card
+            with col1:
+                st.image(get_avatar_url(name), width=150)
+                st.markdown(f"**{name}**")
+                st.caption(f"IoT Batch 2025-26 | {roll_input}")
+                st.success("✅ Student Verified")
+            
+            # Attendance Stats
+            with col2:
+                # Filter data for this student
+                student_data = st.session_state.attendance_data[st.session_state.attendance_data['Roll'] == roll_input]
+                
+                if not student_data.empty:
+                    total_classes = len(student_data)
+                    present_count = len(student_data[student_data['Status'] == 'Present'])
+                    attendance_pct = (present_count / total_classes) * 100 if total_classes > 0 else 0
+                    
+                    # Top Metrics
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Overall Attendance", f"{attendance_pct:.1f}%", f"{attendance_pct-75:.1f}% vs Target")
+                    m2.metric("Classes Attended", present_count)
+                    m3.metric("Total Sessions", total_classes)
+                    
+                    st.divider()
+                    
+                    # Charts
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.subheader("Subject-wise Performance")
+                        subj_counts = student_data[student_data['Status'] == 'Present']['Subject'].value_counts().reset_index()
+                        subj_counts.columns = ['Subject', 'Count']
+                        fig_bar = px.bar(subj_counts, x='Subject', y='Count', color='Count', template="plotly_white")
+                        st.plotly_chart(fig_bar, use_container_width=True)
+                        
+                    with c2:
+                        st.subheader("Attendance Distribution")
+                        status_counts = student_data['Status'].value_counts().reset_index()
+                        status_counts.columns = ['Status', 'Count']
+                        fig_pie = px.pie(status_counts, values='Count', names='Status', hole=0.5, color_discrete_sequence=['#00CC96', '#EF553B'])
+                        st.plotly_chart(fig_pie, use_container_width=True)
+                        
+                else:
+                    st.info("👋 No attendance records found yet. Ask your faculty to mark attendance.")
+        else:
+            st.error("Student not found in the IoT 1st Year database.")
+
+# =================================================
+# 6. FACULTY ADMIN PANEL
+# =================================================
+elif menu == "👮 Faculty Admin":
+    st.title("👮 Faculty Command Center")
+    
+    # Simple Auth
+    password = st.sidebar.text_input("Admin Password", type="password")
+    
+    if password == "admin123":  # Simple auth for demo
+        tab1, tab2 = st.tabs(["📝 Mark Attendance", "👥 Manage Students"])
+        
+        # --- TAB 1: MARK ATTENDANCE ---
+        with tab1:
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                sel_date = st.date_input("Date", datetime.now())
+            with c2:
+                sel_subject = st.selectbox("Select Subject", SUBJECTS)
+            with c3:
+                action = st.radio("Bulk Action", ["Mark All Present", "Manual"], horizontal=True)
+            
+            st.subheader(f"Attendance Sheet: {sel_subject} ({sel_date})")
+            
+            # Create a temporary dataframe for editing
+            edit_df = df_students[['roll', 'name']].copy()
+            edit_df['Status'] = 'Present' if action == "Mark All Present" else False
+            
+            # The Data Editor (Excel-like interface)
+            edited_df = st.data_editor(
+                edit_df,
+                column_config={
+                    "Status": st.column_config.CheckboxColumn(
+                        "Present?",
+                        help="Check if present",
+                        default=True
+                    )
+                },
+                disabled=["roll", "name"],
+                hide_index=True,
+                num_rows="fixed",
+                use_container_width=True
+            )
+            
+            if st.button("🚀 Submit Attendance to Cloud"):
+                # Process the edited dataframe
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                new_records = []
+                
+                for index, row in edited_df.iterrows():
+                    status = "Present" if row['Status'] else "Absent"
+                    new_records.append({
+                        'Date': sel_date,
+                        'Roll': row['roll'],
+                        'Name': row['name'],
+                        'Subject': sel_subject,
+                        'Status': status,
+                        'Timestamp': timestamp
+                    })
+                
+                # Append to session state
+                new_df = pd.DataFrame(new_records)
+                st.session_state.attendance_data = pd.concat([st.session_state.attendance_data, new_df], ignore_index=True)
+                
+                # Save to CSV (local backup)
+                st.session_state.attendance_data.to_csv('attendance_log.csv', index=False)
+                st.success(f"Successfully marked attendance for {len(new_records)} students!")
+        
+        # --- TAB 2: MANAGE STUDENTS ---
+        with tab2:
+            st.warning("⚠️ Editing the Master Roll List")
+            updated_students = st.data_editor(df_students, num_rows="dynamic")
+            
+            if st.button("Save Changes to Student List"):
+                updated_students.to_csv("students.csv", index=False)
+                st.success("Student Database Updated!")
+                
     else:
-        return "CRITICAL", "critical", "Immediate action required"
+        st.info("Please enter the admin password to access faculty controls.")
 
+# =================================================
+# 7. ANALYTICS HUB
+# =================================================
+elif menu == "📊 Analytics Hub":
+    st.title("📊 Class Analytics Reports")
+    
+    if st.session_state.attendance_data.empty:
+        st.warning("No data available yet.")
+    else:
+        # Download Section
+        st.subheader("📥 Export Reports")
+        col1, col2 = st.columns(2)
+        
+        # CSV Download
+        csv = st.session_state.attendance_data.to_csv(index=False).encode('utf-8')
+        col1.download_button(
+            "📄 Download CSV Report",
+            csv,
+            "attendance_report.csv",
+            "text/csv",
+            key='download-csv'
+        )
+        
+        # PDF Download
+        pdf_bytes = download_pdf(st.session_state.attendance_data)
+        col2.download_button(
+            "📑 Download PDF Report",
+            data=pdf_bytes,
+            file_name="attendance_report.pdf",
+            mime="application/pdf"
+        )
+        
+        st.divider()
+        
+        # Visual Analytics
+        st.subheader("📈 Trends")
+        
+        # 1. Attendance by Date
+        daily_att = st.session_state.attendance_data[st.session_state.attendance_data['Status']=='Present'].groupby('Date').count()['Roll'].reset_index()
+        fig_line = px.line(daily_att, x='Date', y='Roll', title="Daily Attendance Count", markers=True)
+        st.plotly_chart(fig_line, use_container_width=True)
+        
+        # 2. Defaulters List (< 75%)
+        st.subheader("🚨 Low Attendance Alert (<75%)")
+        
+        # Calculate percentages
+        total_sessions = st.session_state.attendance_data['Date'].nunique() # Approx
+        student_counts = st.session_state.attendance_data[st.session_state.attendance_data['Status']=='Present']['Name'].value_counts().reset_index()
+        student_counts.columns = ['Name', 'Present_Count']
+        
+        # NOTE: In a real app, this logic needs to be more robust based on total classes held per subject
+        # Here we just show a leaderboard
+        st.dataframe(student_counts, use_container_width=True)
+        if not sa.empty:
+            total = len(sa)
+            present = len(sa[sa["status"]=="Present"])
+            overall = round(present/total*100,2)
 
-SUBJECTS = [
-    "BEE",
-    "ODEVC",
-    "DS",
-    "AEP",
+            st.metric("Overall Attendance %", f"{overall}%")
+
+            # SUBJECT PIE
+            st.subheader("📚 Subject-wise Attendance")
+            subj_pct = sa.groupby("subject")["status"].apply(
+                lambda x: (x=="Present").mean()*100
+            )
+
+            fig, ax = plt.subplots()
+            ax.pie(subj_pct.values, labels=subj_pct.index, autopct="%1.1f%%")
+            st.pyplot(fig)
+
+            # MONTHLY TREND
+            st.subheader("📅 Monthly Attendance Trend")
+            sa["date"] = pd.to_datetime(sa["date"])
+            monthly = sa.groupby(sa["date"].dt.to_period("M"))["status"].apply(
+                lambda x:(x=="Present").mean()*100
+            )
+            st.bar_chart(monthly)
+
+        else:
+            st.info("No attendance data available.")
+
+    else:
+        st.warning("Roll number not found.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# =================================================
+# FACULTY DASHBOARD
+# =================================================
+if page == "Faculty":
+    pwd = st.text_input("Admin Password", type="password")
+
+    if pwd == "admin123":
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+
+        # STUDENT LIST
+        st.subheader("👥 Student Profiles")
+        selected = st.selectbox("Select Student", students["roll"])
+        sp = students[students["roll"]==selected].iloc[0]
+
+        st.image(MALE_AVATAR if sp["gender"]=="Male" else FEMALE_AVATAR, width=80)
+        st.write(sp)
+
+        # MARK ATTENDANCE
+        st.subheader("📝 Mark Attendance")
+        subj = st.selectbox("Subject", SUBJECTS)
+        status = st.radio("Status", ["Present", "Absent"])
+
+        if st.button("Save Attendance"):
+            attendance = pd.concat([
+                attendance,
+                pd.DataFrame([[str(date.today()), selected, subj, status]],
+                columns=attendance.columns)
+            ])
+            attendance.to_csv("attendance.csv", index=False)
+            st.success("Attendance recorded")
+
+        # VIEW REPORT
+        st.subheader("📊 Attendance Report")
+        report = attendance[attendance["roll"]==selected]
+        st.dataframe(report)
+
+        # EXPORT CSV
+        st.download_button(
+            "⬇️ Download CSV",
+            report.to_csv(index=False),
+            "attendance.csv"
+        )
+
+        # EXPORT PDF
+        if st.button("⬇️ Download PDF"):
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=10)
+            pdf.cell(0,10,"Attendance Report", ln=True)
+
+            for _,r in report.iterrows():
+                pdf.cell(0,8,f"{r['date']} | {r['subject']} | {r['status']}", ln=True)
+
+            pdf.output("report.pdf")
+            with open("report.pdf","rb") as f:
+                st.download_button("Download PDF File", f, "report.pdf")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    else:
+        st.error("Invalid password")
+
+# =================================================
+# FOOTER
+# =================================================
+st.caption("Designed & Developed by Pranav")    "AEP",
     "IT WORKSHOP",
     "BEE LAB",
     "DS LAB",
