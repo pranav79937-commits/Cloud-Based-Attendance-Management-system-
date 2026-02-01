@@ -188,45 +188,27 @@ if page == "Student":
 
         overall = calculate_percentage(sa)
         st.metric("Overall Attendance %", f"{overall}%")
-        if not sa.empty:
-    st.subheader("📚 Subject-wise Attendance")
-
-# =================================================
-page = st.sidebar.radio("Navigate", ["Student", "Faculty"])
-
-# =================================================
-# STUDENT DASHBOARD
-# =================================================
-if page == "Student":
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    roll = st.text_input("Enter Roll Number")
-
-    if roll in students["roll"].values:
-        s = students[students["roll"] == roll].iloc[0]
-        st.image(MALE_AVATAR if s["gender"]=="Male" else FEMALE_AVATAR, width=90)
-        st.write(f"**{s['name']} | {s['department']} | {s['year']}**")
-
-        sa = get_student_attendance(attendance, roll)
-
-        overall = calculate_percentage(sa)
-        st.metric("Overall Attendance %", f"{overall}%")
-        if not sa.empty:
-    st.subheader("📚 Subject-wise Attendance")
+        
+if not sa.empty:
+    st.subheader("📊 Subject-wise Attendance")
 
     subj_pct = sa.groupby("subject")["status"].apply(
         lambda x: (x == "Present").mean() * 100
     )
 
     fig, ax = plt.subplots()
-    ax.pie(subj_pct.values, labels=subj_pct.index, autopct="%1.1f%%")
+    ax.pie(
+        subj_pct.values,
+        labels=subj_pct.index,
+        autopct="%1.1f%%"
+    )
+    ax.set_title("Attendance Distribution")
     st.pyplot(fig)
-
     else:
         st.warning("Roll number not found")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# =================================================
 # FACULTY DASHBOARD
 # =================================================
 if page == "Faculty":
