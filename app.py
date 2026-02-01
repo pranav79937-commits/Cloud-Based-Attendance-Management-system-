@@ -23,7 +23,7 @@ MALE_AVATAR = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png"
 FEMALE_AVATAR = "https://cdn-icons-png.flaticon.com/512/4140/4140051.png"
 
 # =================================================
-# 4. DATA LOADING
+# 4. DATA ACCESS LAYER (CACHED)
 # =================================================
 @st.cache_data
 def load_data():
@@ -35,12 +35,12 @@ def load_data():
 students, attendance, SUBJECTS = load_data()
 
 # =================================================
-# 5. HELPER FUNCTIONS (BACKEND LOGIC)
+# 5. BACKEND LOGIC (CLEAN SEPARATION)
 # =================================================
 def get_student_attendance(df, roll):
     return df[df["roll"] == roll]
 
-def calculate_percentage(df):
+def attendance_percentage(df):
     if df.empty:
         return 0.0
     return round((df["status"] == "Present").mean() * 100, 2)
@@ -57,8 +57,16 @@ def monthly_percentage(df):
         lambda x: round((x == "Present").mean() * 100, 2)
     )
 
+def attendance_health(p):
+    if p >= 75:
+        return "🟢 Healthy", "success"
+    elif p >= 60:
+        return "🟡 Needs Attention", "warning"
+    else:
+        return "🔴 Critical", "error"
+
 # =================================================
-# 6. DARK MODE + STYLES (FIGMA-INSPIRED)
+# 6. DARK MODE + UI STYLES (FIGMA-INSPIRED)
 # =================================================
 dark = st.sidebar.toggle("🌙 Dark Mode")
 
@@ -75,6 +83,10 @@ st.markdown(
         border-radius: 16px;
         margin-bottom: 20px;
         box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+        transition: 0.2s ease-in-out;
+    }}
+    .card:hover {{
+        transform: scale(1.01);
     }}
     </style>
     """,
@@ -108,7 +120,9 @@ if page == "Student":
     roll = st.text_input("Enter Roll Number")
 
     if roll in students["roll"].values:
-        s = students[students["roll"] == roll].iloc[0]
+        with st.spinner("Loading student dashboard..."):
+            s = students[students["roll"] == roll].iloc[0]
+            sa = get_student_attendance(attendance, roll)
 
         avatar = MALE_AVATAR if s["gender"] == "Male" else FEMALE_AVATAR
         st.image(avatar, width=90)
@@ -116,26 +130,27 @@ if page == "Student":
         st.write(f"**Name:** {s['name']}")
         st.write(f"**Department:** {s['department']} | **Year:** {s['year']}")
 
-        sa = get_student_attendance(attendance, roll)
-
-        overall = calculate_percentage(sa)
+        overall = attendance_percentage(sa)
         st.metric("Overall Attendance %", f"{overall}%")
 
-        if not sa.empty:
-            # SUBJECT-WISE PIE
-            st.subheader("📚 Subject-wise Attendance (%)")
-            subj_pct = subject_wise_percentage(sa)
+        label, level = attendance_health(overall)
+        getattr(st, level)(label)
 
+        if sa.empty:
+            st.info("No attendance records available yet.")
+        else:
+            st.subheader("📚 Subject-wise Attendance")
             fig1, ax1 = plt.subplots()
-            ax1.pie(subj_pct.values, labels=subj_pct.index, autopct="%1.1f%%")
+            ax1.pie(
+                subject_wise_percentage(sa).values,
+                labels=subject_wise_percentage(sa).index,
+                autopct="%1.1f%%"
+            )
             ax1.set_ylabel("")
             st.pyplot(fig1)
 
-            # MONTHLY TREND
-            st.subheader("📅 Monthly Attendance (%)")
+            st.subheader("📅 Monthly Attendance Trend")
             st.bar_chart(monthly_percentage(sa))
-        else:
-            st.info("No attendance records available yet.")
 
     else:
         st.warning("Roll number not found.")
@@ -171,10 +186,10 @@ if page == "Faculty":
                     students,
                     pd.DataFrame(
                         [[roll_new, name_new, gender_new, dept_new, year_new]],
-                        columns=students.columns,
-                    ),
+                        columns=students.columns
+                    )
                 ],
-                ignore_index=True,
+                ignore_index=True
             )
             students.to_csv("students.csv", index=False)
             st.success("Student saved successfully")
@@ -183,35 +198,31 @@ if page == "Faculty":
         st.markdown("---")
 
         # -------------------------------
-        # STUDENT PROFILE + ATTENDANCE
+        # STUDENT PROFILE & ATTENDANCE
         # -------------------------------
         st.subheader("👤 Student Profile & Attendance")
 
         selected_roll = st.selectbox("Select Student", students["roll"])
         sp = students[students["roll"] == selected_roll].iloc[0]
+        sa = get_student_attendance(attendance, selected_roll)
 
         avatar = MALE_AVATAR if sp["gender"] == "Male" else FEMALE_AVATAR
         st.image(avatar, width=80)
         st.write(sp)
 
-        sa = get_student_attendance(attendance, selected_roll)
-  # ATTENDANCE HISTORY
-# -------------------------------
-if sa.empty:
-    st.info("No attendance records found for this student yet.")
-else:
-    st.subheader("📋 Attendance History")
-    st.dataframe(sa, use_container_width=True)
-    
-        # -------------------------------
+        if sa.empty:
+            st.info("No attendance records found for this student yet.")
+        else:
+            st.subheader("📋 Attendance History")
+            st.dataframe(sa, use_container_width=True)
 
-        # SUBJECT-WISE PIE (FACULTY)
-        if not sa.empty:
-            st.subheader("📊 Subject-wise Attendance (%)")
-
-            subj_pct_f = subject_wise_percentage(sa)
+            st.subheader("📊 Subject-wise Attendance")
             fig2, ax2 = plt.subplots()
-            ax2.pie(subj_pct_f.values, labels=subj_pct_f.index, autopct="%1.1f%%")
+            ax2.pie(
+                subject_wise_percentage(sa).values,
+                labels=subject_wise_percentage(sa).index,
+                autopct="%1.1f%%"
+            )
             ax2.set_ylabel("")
             st.pyplot(fig2)
 
@@ -231,10 +242,10 @@ else:
                     attendance,
                     pd.DataFrame(
                         [[str(date.today()), selected_roll, subject, status]],
-                        columns=attendance.columns,
-                    ),
+                        columns=attendance.columns
+                    )
                 ],
-                ignore_index=True,
+                ignore_index=True
             )
             attendance.to_csv("attendance.csv", index=False)
             st.success("Attendance marked successfully")
@@ -250,7 +261,7 @@ else:
         st.download_button(
             "Download CSV",
             sa.to_csv(index=False),
-            "attendance_report.csv",
+            "attendance_report.csv"
         )
 
         if st.button("Generate PDF"):
@@ -258,23 +269,16 @@ else:
             pdf.add_page()
             pdf.set_font("Arial", size=10)
             pdf.cell(0, 10, "Attendance Report", ln=True)
-
             for _, r in sa.iterrows():
                 pdf.cell(
                     0,
                     8,
                     f"{r['date']} | {r['subject']} | {r['status']}",
-                    ln=True,
+                    ln=True
                 )
-
             pdf.output("attendance_report.pdf")
-
             with open("attendance_report.pdf", "rb") as f:
-                st.download_button(
-                    "Download PDF",
-                    f,
-                    "attendance_report.pdf",
-                )
+                st.download_button("Download PDF", f, "attendance_report.pdf")
 
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -282,9 +286,8 @@ else:
         st.error("Invalid password")
 
 # ==========================================================
-# 8. FOOTER (Personal Branding)
+# 11. FOOTER (Personal Branding)
 # ==========================================================
-
 st.sidebar.markdown("---")
 st.sidebar.markdown(
     """
@@ -307,4 +310,5 @@ st.sidebar.markdown(
     </div>
     """,
     unsafe_allow_html=True
-    )
+        )
+
