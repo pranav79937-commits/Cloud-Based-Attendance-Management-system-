@@ -1,150 +1,146 @@
+# =================================================
+# 1. IMPORTS
+# =================================================
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, timedelta
 import matplotlib.pyplot as plt
+import random
 
-# -------------------------------------------------
-# PAGE CONFIG
-# -------------------------------------------------
+
+# =================================================
+# 2. PAGE CONFIGURATION
+# =================================================
 st.set_page_config(
     page_title="Smart Attendance Dashboard",
     page_icon="📊",
     layout="centered"
 )
 
-# -------------------------------------------------
-# DATA (BACKEND UNTOUCHED)
-# -------------------------------------------------
-students = pd.read_csv("students.csv")
-attendance = pd.read_csv("attendance.csv")
 
-# -------------------------------------------------
-# DARK MODE TOGGLE
-# -------------------------------------------------
+# =================================================
+# 3. DATA LOADING (CACHED)
+# =================================================
+@st.cache_data
+def load_data():
+    students = pd.read_csv("students.csv")
+    attendance = pd.read_csv("attendance.csv")
+    return students, attendance
+
+students, attendance = load_data()
+
+
+# =================================================
+# 4. GLOBAL UI CONTROLS
+# =================================================
 dark_mode = st.sidebar.toggle("🌙 Dark Mode")
 
-# -------------------------------------------------
-# FIGMA-INSPIRED DESIGN TOKENS → CSS
-# -------------------------------------------------
-if dark_mode:
-    st.markdown("""
-    <style>
-    :root {
-        --bg:#121212;
-        --card:#1e1e1e;
-        --text:#e0e0e0;
-        --primary:#42a5f5;
-        --safe:#2e7d32;
-        --warn:#f9a825;
-        --critical:#c62828;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-else:
-    st.markdown("""
-    <style>
-    :root {
-        --bg:#f4f6f8;
-        --card:#ffffff;
-        --text:#000000;
-        --primary:#1565c0;
-        --safe:#2e7d32;
-        --warn:#f9a825;
-        --critical:#c62828;
-    }
-    </style>
-    """, unsafe_allow_html=True)
 
-st.markdown("""
+# =================================================
+# 5. GLOBAL STYLES
+# =================================================
+st.markdown(f"""
 <style>
-body { background-color: var(--bg); color: var(--text); }
-
-.header {
-    background: linear-gradient(90deg, var(--primary), #42a5f5);
+body {{
+    background-color: {"#121212" if dark_mode else "#f4f6f8"};
+    color: {"#e0e0e0" if dark_mode else "#000000"};
+}}
+.header {{
+    background: linear-gradient(90deg, #1565c0, #42a5f5);
     padding: 22px;
     border-radius: 16px;
     color: white;
     text-align: center;
     margin-bottom: 24px;
-}
-
-.section {
-    background: var(--card);
+}}
+.section {{
+    background: {"#1e1e1e" if dark_mode else "#ffffff"};
     padding: 22px;
     border-radius: 16px;
     margin-bottom: 22px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.08);
-}
-
-.metric-box {
-    background: rgba(66,165,245,0.12);
+}}
+.metric-box {{
+    background: {"#263238" if dark_mode else "#eef6ff"};
     padding: 18px;
     border-radius: 14px;
     text-align: center;
-}
-
-.chip {
+}}
+.chip {{
     padding: 6px 14px;
     border-radius: 20px;
     color: white;
     font-size: 13px;
     font-weight: bold;
-}
-
-.safe { background: var(--safe); }
-.warn { background: var(--warn); }
-.critical { background: var(--critical); }
-
-.stButton > button {
-    background-color: var(--primary);
+}}
+.safe {{ background: #2e7d32; }}
+.warn {{ background: #f9a825; }}
+.critical {{ background: #c62828; }}
+.stButton > button {{
+    background-color: #1565c0;
     color: white;
     border-radius: 10px;
     height: 44px;
     font-size: 16px;
-}
+}}
 </style>
 """, unsafe_allow_html=True)
 
-# -------------------------------------------------
-# HEADER
-# -------------------------------------------------
+
+# =================================================
+# 6. HELPERS
+# =================================================
+def get_attendance_status(percent):
+    if percent >= 75:
+        return "SAFE", "safe", "Attendance is healthy"
+    elif percent >= 60:
+        return "WARNING", "warn", "Attendance needs attention"
+    else:
+        return "CRITICAL", "critical", "Immediate action required"
+
+
+SUBJECTS = [
+    "BEE",
+    "ODEVC",
+    "DS",
+    "AEP",
+    "IT WORKSHOP",
+    "BEE LAB",
+    "DS LAB",
+    "PPL LAB"
+]
+
+
+# =================================================
+# 7. HEADER
+# =================================================
 st.markdown("""
 <div class="header">
 <h1>📊 Smart Attendance Dashboard</h1>
-<p>Insight-Driven | Cloud-Deployed | Student-Centric</p>
+<p>Insight-Driven | Cloud-Deployed | Academic Analytics</p>
 </div>
 """, unsafe_allow_html=True)
 
-# -------------------------------------------------
-# NAVIGATION
-# -------------------------------------------------
-role = st.sidebar.radio("Select Role", ["Student", "Faculty"])
 
 # =================================================
-# STUDENT VIEW
+# 8. NAVIGATION
 # =================================================
-if role == "Student":
+page = st.sidebar.radio(
+    "Navigate",
+    ["Student", "Faculty", "Analytics"]
+)
+
+
+# =================================================
+# 9. STUDENT PAGE
+# =================================================
+if page == "Student":
     st.markdown("<div class='section'>", unsafe_allow_html=True)
-    st.subheader("👨‍🎓 Student Access")
+    st.subheader("👨‍🎓 Student Dashboard")
 
     roll = st.text_input("Enter Roll Number")
 
     if roll in students["roll"].values:
-        s = students[students["roll"] == roll].iloc[0]
-
-        avatar = (
-            "https://cdn-icons-png.flaticon.com/512/4140/4140048.png"
-            if s["gender"] == "Male"
-            else "https://cdn-icons-png.flaticon.com/512/4140051.png"
-        )
-
-        st.image(avatar, width=90)
-        st.markdown(f"""
-**Name:** {s['name']}  
-**Department:** {s['department']}  
-**Year:** {s['year']}
-""")
-
         sa = attendance[attendance["roll"] == roll]
 
         if not sa.empty:
@@ -152,41 +148,35 @@ if role == "Student":
             present = len(sa[sa["status"] == "Present"])
             percent = round((present / total) * 100, 2)
 
-            if percent >= 75:
-                cls, msg = "safe", "Attendance is healthy"
-            elif percent >= 60:
-                cls, msg = "warn", "Attendance needs attention"
-            else:
-                cls, msg = "critical", "Immediate action required"
+            status, cls, msg = get_attendance_status(percent)
 
             st.markdown(f"""
-<div class="section">
-<div class="metric-box">
-<h2>{percent}%</h2>
-<span class="chip {cls}">{msg}</span>
-</div>
-</div>
-""", unsafe_allow_html=True)
+            <div class="metric-box">
+            <h2>{percent}%</h2>
+            <span class="chip {cls}">{status}</span>
+            <p>{msg}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
-            if st.checkbox("Show subject-wise breakdown"):
-                chart = sa["subject"].value_counts()
-                fig, ax = plt.subplots()
-                ax.pie(chart.values, labels=chart.index, autopct="%1.1f%%")
-                st.pyplot(fig)
+            st.markdown("### 📊 Subject-wise Attendance")
+            fig, ax = plt.subplots()
+            sa["subject"].value_counts().plot(kind="pie", autopct="%1.1f%%", ax=ax)
+            ax.set_ylabel("")
+            st.pyplot(fig)
 
-            st.caption("Attendance percentage is calculated from recorded classes.")
         else:
-            st.info("No attendance records yet.")
+            st.info("No attendance records found.")
 
     else:
         st.warning("Roll number not registered.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
+
 # =================================================
-# FACULTY VIEW
+# 10. FACULTY PAGE
 # =================================================
-if role == "Faculty":
+if page == "Faculty":
     st.markdown("<div class='section'>", unsafe_allow_html=True)
     st.subheader("👩‍🏫 Faculty Dashboard")
 
@@ -195,31 +185,10 @@ if role == "Faculty":
     if pwd == "admin123":
         st.success("Access granted")
 
-        col1, col2 = st.columns(2)
-        col1.metric("Total Students", len(students))
-        col2.metric("Attendance Records", len(attendance))
-
-        st.caption("System overview for quick decision making.")
-
-        with st.expander("➕ Add / Update Student"):
-            r = st.text_input("Roll Number")
-            n = st.text_input("Name")
-            g = st.selectbox("Gender", ["Male", "Female"])
-            d = st.text_input("Department")
-            y = st.selectbox("Year", ["1st","2nd","3rd","4th"])
-
-            if st.button("Save Student"):
-                students = students[students["roll"] != r]
-                students = pd.concat([
-                    students,
-                    pd.DataFrame([[r,n,g,d,y]], columns=students.columns)
-                ])
-                students.to_csv("students.csv", index=False)
-                st.success("Student record saved")
-
         with st.expander("📝 Mark Attendance"):
             ar = st.selectbox("Roll", students["roll"])
-            subj = st.selectbox("Subject", ["Maths","Physics","CS","Electronics"])
+            subj = st.selectbox("Subject", SUBJECTS)
+
             if st.button("Mark Present"):
                 attendance = pd.concat([
                     attendance,
@@ -227,103 +196,69 @@ if role == "Faculty":
                                  columns=attendance.columns)
                 ])
                 attendance.to_csv("attendance.csv", index=False)
-                st.success("Attendance marked")
+                st.toast("Attendance marked")
 
-        with st.expander("📋 View & Export Records"):
-            st.dataframe(attendance, use_container_width=True)
-            st.download_button(
-                "⬇️ Export CSV",
-                attendance.to_csv(index=False),
-                "attendance.csv"
-            )
+        with st.expander("⚙️ Generate Demo Attendance"):
+            if st.button("Generate 15-Day Demo Data"):
+                records = []
+                for _, s in students.iterrows():
+                    for i in range(1, 16):
+                        records.append([
+                            str(date.today() - timedelta(days=i)),
+                            s["roll"],
+                            random.choice(SUBJECTS),
+                            "Present" if random.random() > 0.2 else "Absent"
+                        ])
+                attendance = pd.concat(
+                    [attendance, pd.DataFrame(records, columns=attendance.columns)],
+                    ignore_index=True
+                )
+                attendance.to_csv("attendance.csv", index=False)
+                st.toast("Demo data generated")
 
     else:
         st.error("Invalid password")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# -------------------------------------------------
-# FOOTER
-# -------------------------------------------------
-st.markdown("---")
-st.caption("Designed & Developed by Pranav")<p>{msg}</p>
-</div>
-</div>
-""", unsafe_allow_html=True)
 
-            if st.checkbox("Show subject-wise breakdown"):
-                chart = student_att["subject"].value_counts()
-                fig, ax = plt.subplots()
-                ax.pie(chart.values, labels=chart.index, autopct="%1.1f%%")
-                st.pyplot(fig)
-
-            st.caption("Attendance percentage is calculated based on recorded classes.")
-        else:
-            st.info("No attendance data available.")
-
-    else:
-        st.warning("Roll number not registered.")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ================= FACULTY =================
-if role == "Faculty":
+# =================================================
+# 11. ANALYTICS PAGE (🔥 NEW)
+# =================================================
+if page == "Analytics":
     st.markdown("<div class='section'>", unsafe_allow_html=True)
-    st.subheader("👩‍🏫 Faculty Dashboard")
+    st.subheader("📈 Attendance Analytics")
 
-    pwd = st.text_input("Admin Password", type="password")
-
-    if pwd == "admin123":
-        st.success("Access granted")
-
-        # ---- INSIGHT ROW ----
-        col1, col2 = st.columns(2)
-        col1.metric("Total Students", len(students))
-        col2.metric("Attendance Records", len(attendance))
-
-        st.caption("Quick system overview for decision making.")
-
-        # ---- ADD STUDENT ----
-        with st.expander("➕ Add / Update Student"):
-            r = st.text_input("Roll Number")
-            n = st.text_input("Name")
-            g = st.selectbox("Gender", ["Male", "Female"])
-            d = st.text_input("Department")
-            y = st.selectbox("Year", ["1st","2nd","3rd","4th"])
-
-            if st.button("Save Student"):
-                students = students[students["roll"] != r]
-                students = pd.concat([students, pd.DataFrame([[r,n,g,d,y]], columns=students.columns)])
-                students.to_csv("students.csv", index=False)
-                st.success("Student record saved")
-
-        # ---- MARK ATTENDANCE ----
-        with st.expander("📝 Mark Attendance"):
-            ar = st.selectbox("Roll", students["roll"])
-            subj = st.selectbox("Subject", ["Maths","Physics","CS","Electronics"])
-            if st.button("Mark Present"):
-                attendance = pd.concat([
-                    attendance,
-                    pd.DataFrame([[str(date.today()), ar, subj, "Present"]],
-                                 columns=attendance.columns)
-                ])
-                attendance.to_csv("attendance.csv", index=False)
-                st.success("Attendance marked")
-
-        # ---- DATA VIEW ----
-        with st.expander("📋 View & Export Records"):
-            st.dataframe(attendance, use_container_width=True)
-            st.download_button(
-                "⬇️ Export CSV",
-                attendance.to_csv(index=False),
-                "attendance.csv"
-            )
-
+    if attendance.empty:
+        st.info("No attendance data available.")
     else:
-        st.error("Invalid password")
+        st.markdown("### 👤 Student-wise Attendance %")
+        student_stats = (
+            attendance.groupby("roll")["status"]
+            .apply(lambda x: (x == "Present").mean() * 100)
+        )
+
+        st.bar_chart(student_stats)
+
+        st.markdown("### 📚 Subject-wise Attendance Count")
+        st.bar_chart(attendance["subject"].value_counts())
+
+        st.markdown("### 🗓 Weekly Attendance Trend")
+        attendance["date"] = pd.to_datetime(attendance["date"])
+        weekly = (
+            attendance.groupby(attendance["date"].dt.to_period("W"))["status"]
+            .apply(lambda x: (x == "Present").mean() * 100)
+        )
+        weekly.index = weekly.index.astype(str)
+        st.line_chart(weekly)
+
+        st.caption("Trends help faculty identify attendance patterns over time.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------- FOOTER ----------------
+
+# =================================================
+# 12. FOOTER
+# =================================================
 st.markdown("---")
 st.caption("Designed & Developed by Pranav")
