@@ -35,7 +35,7 @@ def load_data():
 students, attendance, SUBJECTS = load_data()
 
 # =================================================
-# 5. BACKEND LOGIC (CLEAN SEPARATION)
+# 5. BACKEND LOGIC (BUSINESS RULES)
 # =================================================
 def get_student_attendance(df, roll):
     return df[df["roll"] == roll]
@@ -57,16 +57,16 @@ def monthly_percentage(df):
         lambda x: round((x == "Present").mean() * 100, 2)
     )
 
-def attendance_health(p):
-    if p >= 75:
-        return "🟢 Healthy", "success"
-    elif p >= 60:
-        return "🟡 Needs Attention", "warning"
+def eligibility_rule(p):
+    if p >= 85:
+        return "Eligible for Exam", "success"
+    elif p >= 75:
+        return "Conditional Eligibility", "warning"
     else:
-        return "🔴 Critical", "error"
+        return "Not Eligible for Exam", "error"
 
 # =================================================
-# 6. DARK MODE + UI STYLES (FIGMA-INSPIRED)
+# 6. DARK MODE + UI STYLES
 # =================================================
 dark = st.sidebar.toggle("🌙 Dark Mode")
 
@@ -83,10 +83,6 @@ st.markdown(
         border-radius: 16px;
         margin-bottom: 20px;
         box-shadow: 0 8px 24px rgba(0,0,0,0.08);
-        transition: 0.2s ease-in-out;
-    }}
-    .card:hover {{
-        transform: scale(1.01);
     }}
     </style>
     """,
@@ -120,9 +116,8 @@ if page == "Student":
     roll = st.text_input("Enter Roll Number")
 
     if roll in students["roll"].values:
-        with st.spinner("Loading student dashboard..."):
-            s = students[students["roll"] == roll].iloc[0]
-            sa = get_student_attendance(attendance, roll)
+        s = students[students["roll"] == roll].iloc[0]
+        sa = get_student_attendance(attendance, roll)
 
         avatar = MALE_AVATAR if s["gender"] == "Male" else FEMALE_AVATAR
         st.image(avatar, width=90)
@@ -133,25 +128,28 @@ if page == "Student":
         overall = attendance_percentage(sa)
         st.metric("Overall Attendance %", f"{overall}%")
 
-        label, level = attendance_health(overall)
+        label, level = eligibility_rule(overall)
         getattr(st, level)(label)
 
         if sa.empty:
             st.info("No attendance records available yet.")
         else:
-            st.subheader("📚 Subject-wise Attendance")
+            st.subheader("📊 Subject-wise Attendance")
             fig1, ax1 = plt.subplots()
             ax1.pie(
                 subject_wise_percentage(sa).values,
                 labels=subject_wise_percentage(sa).index,
                 autopct="%1.1f%%"
             )
-            ax1.set_ylabel("")
             st.pyplot(fig1)
 
-            st.subheader("📅 Monthly Attendance Trend")
-            st.bar_chart(monthly_percentage(sa))
+            best = subject_wise_percentage(sa).idxmax()
+            worst = subject_wise_percentage(sa).idxmin()
+            st.info(f"Best Subject: **{best}**")
+            st.warning(f"Needs Improvement: **{worst}**")
 
+            st.subheader("📅 Monthly Trend")
+            st.bar_chart(monthly_percentage(sa))
     else:
         st.warning("Roll number not found.")
 
@@ -166,11 +164,7 @@ if page == "Faculty":
     if password == "admin123":
         st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-        # -------------------------------
-        # ADD / EDIT STUDENT
-        # -------------------------------
         st.subheader("➕ Add / ✏️ Edit Student")
-
         with st.form("student_form"):
             roll_new = st.text_input("Roll Number")
             name_new = st.text_input("Student Name")
@@ -182,13 +176,8 @@ if page == "Faculty":
         if save_student:
             students = students[students["roll"] != roll_new]
             students = pd.concat(
-                [
-                    students,
-                    pd.DataFrame(
-                        [[roll_new, name_new, gender_new, dept_new, year_new]],
-                        columns=students.columns
-                    )
-                ],
+                [students, pd.DataFrame([[roll_new, name_new, gender_new, dept_new, year_new]],
+                columns=students.columns)],
                 ignore_index=True
             )
             students.to_csv("students.csv", index=False)
@@ -197,21 +186,20 @@ if page == "Faculty":
 
         st.markdown("---")
 
-        # -------------------------------
-        # STUDENT PROFILE & ATTENDANCE
-        # -------------------------------
         st.subheader("👤 Student Profile & Attendance")
-
         selected_roll = st.selectbox("Select Student", students["roll"])
         sp = students[students["roll"] == selected_roll].iloc[0]
         sa = get_student_attendance(attendance, selected_roll)
 
-        avatar = MALE_AVATAR if sp["gender"] == "Male" else FEMALE_AVATAR
-        st.image(avatar, width=80)
+        st.image(MALE_AVATAR if sp["gender"] == "Male" else FEMALE_AVATAR, width=80)
         st.write(sp)
 
+        overall = attendance_percentage(sa)
+        label, level = eligibility_rule(overall)
+        getattr(st, level)(label)
+
         if sa.empty:
-            st.info("No attendance records found for this student yet.")
+            st.info("No attendance records found.")
         else:
             st.subheader("📋 Attendance History")
             st.dataframe(sa, use_container_width=True)
@@ -223,28 +211,18 @@ if page == "Faculty":
                 labels=subject_wise_percentage(sa).index,
                 autopct="%1.1f%%"
             )
-            ax2.set_ylabel("")
             st.pyplot(fig2)
 
         st.markdown("---")
 
-        # -------------------------------
-        # MARK ATTENDANCE
-        # -------------------------------
         st.subheader("📝 Mark Attendance")
-
         subject = st.selectbox("Subject", SUBJECTS)
         status = st.radio("Status", ["Present", "Absent"])
 
         if st.button("Mark Attendance"):
             attendance = pd.concat(
-                [
-                    attendance,
-                    pd.DataFrame(
-                        [[str(date.today()), selected_roll, subject, status]],
-                        columns=attendance.columns
-                    )
-                ],
+                [attendance, pd.DataFrame([[str(date.today()), selected_roll, subject, status]],
+                columns=attendance.columns)],
                 ignore_index=True
             )
             attendance.to_csv("attendance.csv", index=False)
@@ -253,16 +231,8 @@ if page == "Faculty":
 
         st.markdown("---")
 
-        # -------------------------------
-        # EXPORT REPORTS
-        # -------------------------------
         st.subheader("⬇️ Download Reports")
-
-        st.download_button(
-            "Download CSV",
-            sa.to_csv(index=False),
-            "attendance_report.csv"
-        )
+        st.download_button("Download CSV", sa.to_csv(index=False), "attendance_report.csv")
 
         if st.button("Generate PDF"):
             pdf = FPDF()
@@ -270,18 +240,12 @@ if page == "Faculty":
             pdf.set_font("Arial", size=10)
             pdf.cell(0, 10, "Attendance Report", ln=True)
             for _, r in sa.iterrows():
-                pdf.cell(
-                    0,
-                    8,
-                    f"{r['date']} | {r['subject']} | {r['status']}",
-                    ln=True
-                )
+                pdf.cell(0, 8, f"{r['date']} | {r['subject']} | {r['status']}", ln=True)
             pdf.output("attendance_report.pdf")
             with open("attendance_report.pdf", "rb") as f:
                 st.download_button("Download PDF", f, "attendance_report.pdf")
 
         st.markdown("</div>", unsafe_allow_html=True)
-
     else:
         st.error("Invalid password")
 
@@ -291,24 +255,11 @@ if page == "Faculty":
 st.sidebar.markdown("---")
 st.sidebar.markdown(
     """
-    <style>
-    .footer {
-        text-align: center;
-        color: #888;
-        font-size: 14px;
-        margin-top: 20px;
-        font-family: 'Segoe UI', sans-serif;
-    }
-    .footer b {
-        color: #2E86C1;
-    }
-    </style>
-    <div class="footer">
-        Designed & Developed by <br>
-        <b>Pranav</b> <br>
-        <span style="font-size: 12px">CSE (IoT) | 2025-26</span>
+    <div style="text-align:center;color:#888;font-size:14px">
+    Designed & Developed by <br>
+    <b style="color:#2E86C1">Pranav</b><br>
+    <span style="font-size:12px">CSE (IoT) | 2025-26</span>
     </div>
     """,
     unsafe_allow_html=True
-        )
-
+)
