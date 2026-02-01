@@ -195,7 +195,15 @@ if page == "Faculty":
         st.write(sp)
 
         sa = get_student_attendance(attendance, selected_roll)
-        st.dataframe(sa)
+  # ATTENDANCE HISTORY
+# -------------------------------
+if sa.empty:
+    st.info("No attendance records found for this student yet.")
+else:
+    st.subheader("📋 Attendance History")
+    st.dataframe(sa, use_container_width=True)
+    
+        # -------------------------------
 
         # SUBJECT-WISE PIE (FACULTY)
         if not sa.empty:
